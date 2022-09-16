@@ -140,6 +140,28 @@ int main(int argc, char **argv)
       }
     }
 
+    else if (buf[0] == 'g' && buf[1] == 'e' && buf[2] == 't' && buf[3] == ' ')
+    {
+      char *fname = &buf[4];
+      fname[strlen(fname)-1] = '\0';
+
+      char bytebuf = ' ';
+      FILE *fp;
+
+      if ((fp = fopen(fname, "r")) != NULL)
+      {
+        int i = 0;
+        while (i < 1024)
+        {
+          bytebuf = fgetc(fp);
+          if (bytebuf == EOF) {break;}
+          buf[i] = bytebuf;
+          i++;
+        }
+        fclose(fp);
+      }
+    }
+
     else if (strcmp(buf, "exit\n") == 0)
     {
       bzero(buf, BUFSIZE);

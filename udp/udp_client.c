@@ -79,9 +79,29 @@ int main(int argc, char **argv)
 
     if (n < 0) {error("ERROR in recvfrom");}
 
-    printf("%s\n", buf);
 
-    if (strcmp(temp, "exit\n") == 0){break;}
+    if (strcmp(temp, "exit\n") == 0)
+    {
+      printf("%s\n", buf);
+      break;
+    }
+
+    else if (strcmp(temp, "ls\n") == 0)
+    {
+      printf("%s\n", buf);
+    }
+
+    else if (temp[0] == 'g' && temp[1] == 'e' && temp[2] == 't')
+    {
+      FILE *fp;
+      char *fname = &temp[4];
+      fname[strlen(fname)-1] = '\0';
+      if ((fp = fopen(fname, "a")) != NULL)
+      {
+        fwrite(&buf[0], strlen(buf), 1, fp);
+        fclose(fp);
+      }
+    }
 
     bzero(buf, BUFSIZE);
     printf("Enter Command: ");
