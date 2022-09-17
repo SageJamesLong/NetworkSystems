@@ -125,8 +125,7 @@ int main(int argc, char **argv)
       memset(buf, '\0', BUFSIZE);
       if ((currdir = opendir(".")) == NULL)
       {
-        printf("server couldn't open current directory\n");
-        strcpy(buf, "error: ls failed\n");
+        strcpy(buf, "error: server couldn't open current directory\n"); //HERE
       }
       else
       {
