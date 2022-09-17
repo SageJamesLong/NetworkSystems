@@ -14,7 +14,7 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 
-#define BUFSIZE 1400
+#define BUFSIZE 2048
 
 /*
  * error - wrapper for perror
@@ -125,17 +125,27 @@ int main(int argc, char **argv)
       memset(buf, '\0', BUFSIZE);
       if ((currdir = opendir(".")) == NULL)
       {
-        error("couldn't open current directory\n");
+        printf("server couldn't open current directory\n");
         strcpy(buf, "error: ls failed\n");
       }
       else
       {
         while((dirptr = readdir(currdir)) != NULL)
         {
-          if (dirptr->d_type == DT_REG)
+          if (dirptr->d_type == DT_REG || DT_DIR)
           {
-            strcat(buf, dirptr->d_name);
-            strcat(buf, "\n"); //concat all da bufs here //
+            if (dirptr->d_type == DT_DIR)
+            {
+              strcat(buf, "\033[0;34m");
+              strcat(buf, dirptr->d_name);
+              strcat(buf, "\033[0m");
+              strcat(buf, "\n");
+            }
+            else
+            {
+              strcat(buf, dirptr->d_name);
+              strcat(buf, "\n"); 
+            }
           }
         }
         closedir(currdir);
@@ -162,6 +172,8 @@ int main(int argc, char **argv)
         fpos = ftell(fp);
         fseek(fp, 0, SEEK_SET);
 
+        printf("server sending '%s' (%d bytes) to client (%s)\n", fname, fpos, hostaddrp);
+
         while(fsum != fpos)
         {
           ftop = fpos-fsum;
@@ -185,7 +197,7 @@ int main(int argc, char **argv)
           n = sendto(sockfd, success, (int)strlen(success), 0, (struct sockaddr *) &clientaddr, clientlen);
           if (n < 0) {error("ERROR in sendto");}
 
-          printf("server sending %s (%d/%d bytes) to (%s)\n", fname, fsum, fpos, hostaddrp);
+          printf("progress: %d/%d bytes\n", fsum, fpos);
 
           fread(buf, 1, fsend, fp); 
 
@@ -199,9 +211,14 @@ int main(int argc, char **argv)
 
           if (strcmp(buf, "FAILED") == 0)
           {
+            printf("'GET' STOPPED BY CLIENT\n");
             fclose(fp);
-            continue;
+            break;
           }
+        }
+        if (strcmp(buf, "FAILED") == 0)
+        {
+          continue;
         }
         n = sendto(sockfd, "GETSUCCESS", (int)strlen("GETSUCCESS"), 0, (struct sockaddr *) &clientaddr, clientlen);
         if (n < 0) {error("ERROR in sendto");}
@@ -232,7 +249,7 @@ int main(int argc, char **argv)
 
     else
     {
-      n = sendto(sockfd, "FAILED", (int)strlen("FAILED"), 0, (struct sockaddr *) &clientaddr, clientlen);
+      n = sendto(sockfd, "FAILURE", (int)strlen("FAILURE"), 0, (struct sockaddr *) &clientaddr, clientlen);
       if (n < 0) {error("ERROR in sendto");}
 
       char errbuf[strlen(buf)];

@@ -30,11 +30,6 @@ int main(int argc, char **argv)
   char *hostname;
   char buf[BUFSIZE];
   char temp[BUFSIZE];
-  //char *bufargs[2];
-  char *bufarg;
-  //char *bufpos;
-  //int argcount;
-
   /* check command line arguments */
   if (argc != 3) 
   {
@@ -45,10 +40,12 @@ int main(int argc, char **argv)
   portno = atoi(argv[2]);
 
   /* socket: create the socket */
+
   sockfd = socket(AF_INET, SOCK_DGRAM, 0);
   if (sockfd < 0) {error("ERROR opening socket");}
 
   /* gethostbyname: get the server's DNS entry */
+
   server = gethostbyname(hostname);
   if (server == NULL) 
   {
@@ -57,39 +54,33 @@ int main(int argc, char **argv)
   }
 
   /* build the server's Internet address */
+
   bzero((char *) &serveraddr, sizeof(serveraddr));
   serveraddr.sin_family = AF_INET;
   bcopy((char *)server->h_addr, (char *)&serveraddr.sin_addr.s_addr, server->h_length);
   serveraddr.sin_port = htons(portno); //htons converts to (short) network byte order
-
-  /* get a message from the user */
+  
   bzero(buf, BUFSIZE);
-  printf("Please enter msg: ");
+  printf("Enter Command: ");
   fgets(buf, BUFSIZE, stdin);
   
   serverlen = sizeof(serveraddr);
 
   while(1)
   {
-
     bzero(temp, BUFSIZE);
     strcpy(temp, buf);
-
-    /* send the message to the server */
     
     n = sendto(sockfd, buf, strlen(buf), 0, (struct sockaddr *)&serveraddr, serverlen);
-
     if (n < 0) {error("ERROR in sendto");}
     
-    /* print the server's reply */
     printf("\n");
-
     bzero(buf, BUFSIZE);
 
     n = recvfrom(sockfd, buf, BUFSIZE, 0, (struct sockaddr *)&serveraddr, &serverlen);
     if (n < 0) {error("ERROR in recvfrom");}
 
-    if (strcmp(buf, "FAILED") == 0 || strcmp(buf, "GETFAILURE") == 0)
+    if (strcmp(buf, "FAILURE") == 0 || strcmp(buf, "GETFAILURE") == 0)
     {
       printf("%s\n", buf);
       bzero(buf, BUFSIZE);
@@ -105,40 +96,55 @@ int main(int argc, char **argv)
     if (strstr(buf, "GETINIT") != NULL)
     {
       FILE *fp;
-      char *fname = &temp[4];
-      fname[strlen(fname)-1] = '\0';
-      if ((fp = fopen(fname, "w")) == NULL)
+      char *fname;
+      char *bufarg;
+      int bytes_to_copy;
+      if(strstr(temp, "/"))
       {
+        fname = strrchr(temp, '/');
+      }
+      else
+      {
+        fname = strrchr(temp, ' ');
+      }
+      fname = (fname+1);
+      fname[strlen(fname)-1] = '\0';
+      if ((fp = fopen(fname, "w")) != NULL)
+      {
+        while(strcmp(buf, "GETSUCCESS") != 0)
+        {
+          if (strstr(buf, "GETINIT") && (bufarg = strstr(buf, " ")) != NULL)
+          {
+            bufarg = (bufarg+1);
+            bytes_to_copy = atoi(bufarg);
+            bzero(buf, BUFSIZE);
+            n = recvfrom(sockfd, buf, BUFSIZE, 0, (struct sockaddr *)&serveraddr, &serverlen);
+            if (n < 0) {error("ERROR in recvfrom");}
+
+            fwrite(buf, 1, bytes_to_copy, fp);
+            n = sendto(sockfd, "SUCCESS", strlen("SUCCESS"), 0, (struct sockaddr *)&serveraddr, serverlen);
+            if (n < 0) {error("ERROR in sendto");}
+
+            bzero(buf, BUFSIZE);
+            n = recvfrom(sockfd, buf, BUFSIZE, 0, (struct sockaddr *)&serveraddr, &serverlen);
+            if (n < 0) {error("ERROR in recvfrom");}
+          }
+        }
+        fclose(fp);
+      }
+      else
+      {
+        printf("FAILED to create file '%s'\n", fname);
         bzero(buf, BUFSIZE);
         n = recvfrom(sockfd, buf, BUFSIZE, 0, (struct sockaddr *)&serveraddr, &serverlen);
         if (n < 0) {error("ERROR in recvfrom");}
         n = sendto(sockfd, "FAILED", strlen("FAILED"), 0, (struct sockaddr *)&serveraddr, serverlen);
         if (n < 0) {error("ERROR in sendto");}
-
-        error("ERROR in fopen");
+        bzero(buf, BUFSIZE);
+        printf("\nEnter Command: ");
+        fgets(buf, BUFSIZE, stdin);
         continue;
       }
-      while(strcmp(buf, "GETSUCCESS") != 0)
-      {
-        if (strstr(buf, "GETINIT") && (bufarg = strstr(buf, " ")) != NULL)
-        {
-          int pos;
-          bufarg = (bufarg+1);
-          pos = atoi(bufarg);
-          bzero(buf, BUFSIZE);
-          n = recvfrom(sockfd, buf, BUFSIZE, 0, (struct sockaddr *)&serveraddr, &serverlen);
-          if (n < 0) {error("ERROR in recvfrom");}
-
-          fwrite(buf, 1, pos, fp);
-          n = sendto(sockfd, "SUCCESS", strlen("SUCCESS"), 0, (struct sockaddr *)&serveraddr, serverlen);
-          if (n < 0) {error("ERROR in sendto");}
-
-          bzero(buf, BUFSIZE);
-          n = recvfrom(sockfd, buf, BUFSIZE, 0, (struct sockaddr *)&serveraddr, &serverlen);
-          if (n < 0) {error("ERROR in recvfrom");}
-        }
-      }
-      fclose(fp);
     } 
     else
     {
