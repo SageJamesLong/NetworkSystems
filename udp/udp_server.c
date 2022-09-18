@@ -16,6 +16,8 @@
 
 #define BUFSIZE 2048
 
+#define DEBUG
+#define COLOR
 /*
  * error - wrapper for perror
  */
@@ -35,7 +37,7 @@ int main(int argc, char **argv)
   struct hostent *hostp; /* client host info */
   char buf[BUFSIZE]; /* message buf */
   char splitbuf[BUFSIZE];
-  char *bufargs[2];
+  char *bufargs[3];
   char *bufpos;
   char *bufarg;
   int argcount;
@@ -44,6 +46,9 @@ int main(int argc, char **argv)
   int n; /* message byte size */
   DIR *currdir;
   struct dirent *dirptr;
+  struct timeval t;
+
+  
   /* 
    * check command line arguments 
    */
@@ -66,6 +71,7 @@ int main(int argc, char **argv)
    */
   optval = 1;
   setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, (const void *)&optval , sizeof(int));
+  setsockopt(sockfd, SOL_SOCKET, SO_RCVTIMEO, &t, sizeof(t));
   /*
    * build the server's Internet address
    */
@@ -114,8 +120,10 @@ int main(int argc, char **argv)
     hostaddrp = inet_ntoa(clientaddr.sin_addr);
     if (hostaddrp == NULL) {error("ERROR on inet_ntoa\n");}
 
-    printf("\nserver received datagram from %s (%s)\n", hostp->h_name, hostaddrp);
-    printf("server received %d/%d bytes: %s\n", (int)strlen(buf), n, buf);
+    #ifdef DEBUG
+      printf("\nserver received datagram from %s (%s)\n", hostp->h_name, hostaddrp);
+      printf("server received %d/%d bytes: %s\n", (int)strlen(buf), n, buf);
+    #endif
 
     /* 
      * handle client requests below
@@ -125,14 +133,13 @@ int main(int argc, char **argv)
       memset(buf, '\0', BUFSIZE);
       if ((currdir = opendir(".")) == NULL)
       {
-        strcpy(buf, "error: server couldn't open current directory\n"); //HERE
+        strcpy(buf, "error: server couldn't open current directory\n");
       }
       else
       {
         while((dirptr = readdir(currdir)) != NULL)
         {
-          if (dirptr->d_type == DT_REG || DT_DIR)
-          {
+          #ifdef COLOR
             if (dirptr->d_type == DT_DIR)
             {
               strcat(buf, "\033[0;34m");
@@ -145,12 +152,63 @@ int main(int argc, char **argv)
               strcat(buf, dirptr->d_name);
               strcat(buf, "\n"); 
             }
-          }
+
+          #else
+            strcat(buf, dirptr->d_name);
+            strcat(buf, "\n"); 
+          #endif
         }
         closedir(currdir);
       }
+      //while (1);
       n = sendto(sockfd, buf, (int)strlen(buf), 0, (struct sockaddr *) &clientaddr, clientlen);
       if (n < 0) {error("ERROR in sendto");}
+    }
+
+    else if ((strcmp(bufargs[0], "delete") == 0) && argcount == 2)
+    {
+      exit(0);
+    }
+
+    else if ((strcmp(bufargs[0], "put") == 0) && argcount == 2)
+    {      
+      *(bufargs[1]+(strlen(bufargs[1]))-1) = '\0';
+      char *fname = bufargs[1];
+      FILE *fp;
+      if (((fp = fopen(fname, "wb")) != NULL))
+      {
+        n = sendto(sockfd, "PUTINIT", (int)strlen("PUTINIT"), 0, (struct sockaddr *) &clientaddr, clientlen);
+        if (n < 0) {error("ERROR in sendto");}
+
+        while(strcmp(buf, "PUTSUCCESS") != 0)
+        {
+          memset(buf, '\0', BUFSIZE);
+          n = recvfrom(sockfd, buf, BUFSIZE, 0, (struct sockaddr *) &clientaddr, &clientlen);
+          if (n < 0) {error("ERROR in recvfrom");}
+
+          if (strstr(buf, "PUT") && (bufarg = strstr(buf, " ")) != NULL)
+          {
+            bufarg = (bufarg+1);
+            int bytes_to_copy = atoi(bufarg);
+            memset(buf, '\0', BUFSIZE);
+
+            n = recvfrom(sockfd, buf, bytes_to_copy, 0, (struct sockaddr *) &clientaddr, &clientlen);
+            if (n < 0) {error("ERROR in recvfrom");}
+
+            fwrite(buf, 1, bytes_to_copy, fp);
+
+            n = sendto(sockfd, "SUCCESS", (int)strlen("SUCCESS"), 0, (struct sockaddr *) &clientaddr, clientlen);
+            if (n < 0) {error("ERROR in sendto");}
+          }
+        }
+        fclose(fp);
+      }
+      else
+      {
+        sprintf(buf, "PUTFAILURE\nerror: could not create file'%s'\n", fname);
+        n = sendto(sockfd, buf, (int)strlen(buf), 0, (struct sockaddr *) &clientaddr, clientlen);
+        if (n < 0) {error("ERROR in sendto");}
+      }
     }
 
     else if ((strcmp(bufargs[0], "get") == 0) && argcount == 2)
@@ -165,13 +223,15 @@ int main(int argc, char **argv)
       int fsend = 0;
       int fsum = 0;
 
-      if ((fp = fopen(fname, "r")) != NULL)
+      if ((fp = fopen(fname, "rb")) != NULL)
       {
         fseek(fp, 0, SEEK_END);
         fpos = ftell(fp);
         fseek(fp, 0, SEEK_SET);
 
-        printf("server sending '%s' (%d bytes) to client (%s)\n", fname, fpos, hostaddrp);
+        #ifdef DEBUG
+          printf("server sending '%s' (%d bytes) to client (%s)\n", fname, fpos, hostaddrp);
+        #endif
 
         while(fsum != fpos)
         {
@@ -187,7 +247,7 @@ int main(int argc, char **argv)
             fsum += ftop;
           }
 
-          char success[32];
+          char success[50];
           memset(buf, '\0', BUFSIZE);
           memset(success, '\0', 32);
 
@@ -196,7 +256,9 @@ int main(int argc, char **argv)
           n = sendto(sockfd, success, (int)strlen(success), 0, (struct sockaddr *) &clientaddr, clientlen);
           if (n < 0) {error("ERROR in sendto");}
 
-          printf("progress: %d/%d bytes\n", fsum, fpos);
+          #ifdef DEBUG
+            printf("progress: %d/%d bytes\n", fsum, fpos);
+          #endif
 
           fread(buf, 1, fsend, fp); 
 
@@ -210,7 +272,9 @@ int main(int argc, char **argv)
 
           if (strcmp(buf, "FAILED") == 0)
           {
-            printf("'GET' STOPPED BY CLIENT\n");
+            #ifdef DEBUG
+              printf("'GET' STOPPED BY CLIENT\n");
+            #endif
             fclose(fp);
             break;
           }
