@@ -125,7 +125,7 @@ int main(int argc, char **argv)
       memset(buf, '\0', BUFSIZE);
       if ((currdir = opendir(".")) == NULL)
       {
-        strcpy(buf, "error: server couldn't open current directory\n"); //HERE
+        strcpy(buf, "error: server couldn't open current directory\n"); //HERE EXTRA SHOULD SEE THIS!!!
       }
       else
       {
