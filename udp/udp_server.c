@@ -21,10 +21,13 @@
 /*
  * error - wrapper for perror
  */
-void error(char *msg) 
+void error(char *msg, int ex) 
 {
   perror(msg);
-  exit(1);
+  if (ex)
+  {
+    exit(1);
+  }
 }
 
 int main(int argc, char **argv) 
@@ -47,6 +50,7 @@ int main(int argc, char **argv)
   DIR *currdir;
   struct dirent *dirptr;
   struct timeval t;
+  struct timeval t1;
 
   
   /* 
@@ -63,15 +67,20 @@ int main(int argc, char **argv)
    * socket: create the parent socket 
    */
   sockfd = socket(AF_INET, SOCK_DGRAM, 0);
-  if (sockfd < 0) {error("ERROR opening socket");}
+  if (sockfd < 0) {error("ERROR opening socket", 1);}
   /* setsockopt: Handy debugging trick that lets 
    * us rerun the server immediately after we kill it; 
    * otherwise we have to wait about 20 secs. 
    * Eliminates "ERROR on binding: Address already in use" error. 
    */
   optval = 1;
+  t.tv_sec = 10;
+  t.tv_usec = 0;
+  t1.tv_sec = 0;
+  t1.tv_usec = 0;
   setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, (const void *)&optval , sizeof(int));
-  setsockopt(sockfd, SOL_SOCKET, SO_RCVTIMEO, &t, sizeof(t));
+  setsockopt(sockfd, SOL_SOCKET, SO_SNDTIMEO, &t, sizeof(t));
+  setsockopt(sockfd, SOL_SOCKET, SO_RCVTIMEO, &t1, sizeof(t1));
   /*
    * build the server's Internet address
    */
@@ -82,7 +91,7 @@ int main(int argc, char **argv)
   /* 
    * bind: associate the parent socket with a port 
    */
-  if (bind(sockfd, (struct sockaddr *) &serveraddr, sizeof(serveraddr)) < 0) {error("ERROR on binding");}
+  if (bind(sockfd, (struct sockaddr *) &serveraddr, sizeof(serveraddr)) < 0) {error("ERROR on binding", 1);}
   
   clientlen = sizeof(clientaddr);
   /*
@@ -97,7 +106,7 @@ int main(int argc, char **argv)
     * recvfrom: receive a UDP datagrams from a client
     */
     n = recvfrom(sockfd, buf, BUFSIZE, 0, (struct sockaddr *) &clientaddr, &clientlen);
-    if (n < 0) {error("ERROR in recvfrom");}
+    if (n < 0) {error("ERROR in recvfrom", 0); continue;}
     /* 
      * splitbuf: to parse whitespace seperated arguments while preserving buf
      */
@@ -116,9 +125,9 @@ int main(int argc, char **argv)
      * gethostbyaddr: determine who sent the datagram
      */
     hostp = gethostbyaddr((const char *)&clientaddr.sin_addr.s_addr, sizeof(clientaddr.sin_addr.s_addr), AF_INET);
-    if (hostp == NULL) {error("ERROR on gethostbyaddr");}
+    if (hostp == NULL) {error("ERROR on gethostbyaddr", 0); continue;}
     hostaddrp = inet_ntoa(clientaddr.sin_addr);
-    if (hostaddrp == NULL) {error("ERROR on inet_ntoa\n");}
+    if (hostaddrp == NULL) {error("ERROR on inet_ntoa\n", 0); continue;}
 
     #ifdef DEBUG
       printf("\nserver received datagram from %s (%s)\n", hostp->h_name, hostaddrp);
@@ -162,52 +171,120 @@ int main(int argc, char **argv)
       }
       //while (1);
       n = sendto(sockfd, buf, (int)strlen(buf), 0, (struct sockaddr *) &clientaddr, clientlen);
-      if (n < 0) {error("ERROR in sendto");}
+      if (n < 0) {error("ERROR in sendto", 0); continue;}
     }
 
     else if ((strcmp(bufargs[0], "delete") == 0) && argcount == 2)
     {
-      exit(0);
+      n = sendto(sockfd, "DELETE", (int)strlen("DELETE"), 0, (struct sockaddr *) &clientaddr, clientlen);
+      if (n < 0) {error("ERROR in sendto", 0); continue;}
+      *(bufargs[1]+(strlen(bufargs[1]))-1) = '\0';
+      char *fname = bufargs[1];
+      FILE *fp;
+      if ((fp = fopen(fname, "r")) != NULL)
+      {
+        fclose(fp);
+        if (remove(fname) == 0)
+        {
+          memset(buf, '\0', BUFSIZE);
+          sprintf(buf, "success: file '%s' deleted from server\n", fname);
+          n = sendto(sockfd, buf, (int)strlen(buf), 0, (struct sockaddr *) &clientaddr, clientlen);
+          if (n < 0) {error("ERROR in sendto", 0); continue;}
+        }
+        else
+        {
+          memset(buf, '\0', BUFSIZE);
+          sprintf(buf, "error: could not delete file '%s'\n", fname);
+          n = sendto(sockfd, buf, (int)strlen(buf), 0, (struct sockaddr *) &clientaddr, clientlen);
+          if (n < 0) {error("ERROR in sendto", 0); continue;}
+        }
+      }
+      else
+      {
+        memset(buf, '\0', BUFSIZE);
+        sprintf(buf, "error: file '%s' not found\n", fname);
+        n = sendto(sockfd, buf, (int)strlen(buf), 0, (struct sockaddr *) &clientaddr, clientlen);
+        if (n < 0) {error("ERROR in sendto", 0);}
+      }
     }
 
     else if ((strcmp(bufargs[0], "put") == 0) && argcount == 2)
-    {      
-      *(bufargs[1]+(strlen(bufargs[1]))-1) = '\0';
-      char *fname = bufargs[1];
+    {
+      char *fname;
+      if(strstr(buf, "/"))
+      {
+        fname = strrchr(buf, '/');
+      }
+      else
+      {
+        fname = strrchr(buf, ' ');
+      }
+      fname = (fname+1);
+      fname[strlen(fname)-1] = '\0';
       FILE *fp;
       if (((fp = fopen(fname, "wb")) != NULL))
       {
         n = sendto(sockfd, "PUTINIT", (int)strlen("PUTINIT"), 0, (struct sockaddr *) &clientaddr, clientlen);
-        if (n < 0) {error("ERROR in sendto");}
-
+        if (n < 0) 
+        {
+          fclose(fp);
+          error("ERROR in sendto", 0);
+          continue;
+        }
+        t1.tv_sec = 10;
         while(strcmp(buf, "PUTSUCCESS") != 0)
         {
           memset(buf, '\0', BUFSIZE);
+          t1.tv_sec = 10;
           n = recvfrom(sockfd, buf, BUFSIZE, 0, (struct sockaddr *) &clientaddr, &clientlen);
-          if (n < 0) {error("ERROR in recvfrom");}
+          if (n < 0) 
+          {
+            t1.tv_sec = 0;
+            fclose(fp);
+            error("ERROR in recvfrom", 0);
+            continue;
+          }
+          t1.tv_sec = 0;
 
           if (strstr(buf, "PUT") && (bufarg = strstr(buf, " ")) != NULL)
           {
             bufarg = (bufarg+1);
             int bytes_to_copy = atoi(bufarg);
             memset(buf, '\0', BUFSIZE);
-
+            t1.tv_sec = 10;
             n = recvfrom(sockfd, buf, bytes_to_copy, 0, (struct sockaddr *) &clientaddr, &clientlen);
-            if (n < 0) {error("ERROR in recvfrom");}
+            if (n < 0) 
+            {
+              t1.tv_sec = 0;
+              fclose(fp);
+              error("ERROR in recvfrom", 0);
+              continue;
+            }
+            t1.tv_sec = 0;
 
             fwrite(buf, 1, bytes_to_copy, fp);
 
             n = sendto(sockfd, "SUCCESS", (int)strlen("SUCCESS"), 0, (struct sockaddr *) &clientaddr, clientlen);
-            if (n < 0) {error("ERROR in sendto");}
+            if (n < 0) 
+            {
+              fclose(fp);
+              error("ERROR in sendto", 0);
+              continue;
+            }
           }
         }
         fclose(fp);
+        t1.tv_sec = 0;
       }
       else
       {
         sprintf(buf, "PUTFAILURE\nerror: could not create file'%s'\n", fname);
         n = sendto(sockfd, buf, (int)strlen(buf), 0, (struct sockaddr *) &clientaddr, clientlen);
-        if (n < 0) {error("ERROR in sendto");}
+        if (n < 0) 
+        {
+          error("ERROR in sendto", 0);
+          continue;
+        }
       }
     }
 
@@ -254,7 +331,12 @@ int main(int argc, char **argv)
           sprintf(success, "GETINIT %d", fsend);
 
           n = sendto(sockfd, success, (int)strlen(success), 0, (struct sockaddr *) &clientaddr, clientlen);
-          if (n < 0) {error("ERROR in sendto");}
+          if (n < 0) 
+          {
+            fclose(fp);
+            error("ERROR in sendto", 0);
+            continue;
+          }
 
           #ifdef DEBUG
             printf("progress: %d/%d bytes\n", fsum, fpos);
@@ -263,12 +345,19 @@ int main(int argc, char **argv)
           fread(buf, 1, fsend, fp); 
 
           n = sendto(sockfd, buf, fsend, 0, (struct sockaddr *) &clientaddr, clientlen);
-          if (n < 0) {error("ERROR in sendto");}
+          if (n < 0) {error("ERROR in sendto", 0); continue;}
 
           memset(buf, '\0', BUFSIZE);
-
+          t1.tv_sec = 10;
           n = recvfrom(sockfd, buf, BUFSIZE, 0, (struct sockaddr *) &clientaddr, &clientlen);
-          if (n < 0) {error("ERROR in recvfrom");}
+          if (n < 0) 
+          {
+            t1.tv_sec = 0;
+            fclose(fp);
+            error("ERROR in recvfrom", 0);
+            continue;
+          }
+          t1.tv_sec = 0;
 
           if (strcmp(buf, "FAILED") == 0)
           {
@@ -284,19 +373,24 @@ int main(int argc, char **argv)
           continue;
         }
         n = sendto(sockfd, "GETSUCCESS", (int)strlen("GETSUCCESS"), 0, (struct sockaddr *) &clientaddr, clientlen);
-        if (n < 0) {error("ERROR in sendto");}
+        if (n < 0) 
+        {
+          fclose(fp);
+          error("ERROR in sendto", 0);
+          continue;
+        }
 
         fclose(fp);
       }
       else
       {
         n = sendto(sockfd, "GETFAILURE", (int)strlen("GETFAILURE"), 0, (struct sockaddr *) &clientaddr, clientlen);
-        if (n < 0) {error("ERROR in sendto");}
+        if (n < 0) {error("ERROR in sendto", 0); continue;}
 
         sprintf(buf, "error: file '%s' not found\n", fname);
 
         n = sendto(sockfd, buf, (int)strlen(buf), 0, (struct sockaddr *) &clientaddr, clientlen);
-        if (n < 0) {error("ERROR in sendto");}
+        if (n < 0) {error("ERROR in sendto", 0); continue;}
       }
       
 
@@ -307,13 +401,13 @@ int main(int argc, char **argv)
       memset(buf, '\0', BUFSIZE);
       strcpy(buf, "Goodbye!\n");
       n = sendto(sockfd, buf, (int)strlen(buf), 0, (struct sockaddr *) &clientaddr, clientlen);
-      if (n < 0) {error("ERROR in sendto");}
+      if (n < 0) {error("ERROR in sendto", 0); continue;}
     }
 
     else
     {
       n = sendto(sockfd, "FAILURE", (int)strlen("FAILURE"), 0, (struct sockaddr *) &clientaddr, clientlen);
-      if (n < 0) {error("ERROR in sendto");}
+      if (n < 0) {error("ERROR in sendto", 0);}
 
       char errbuf[strlen(buf)];
       memset(errbuf, '\0', strlen(buf));
@@ -324,7 +418,7 @@ int main(int argc, char **argv)
       sprintf(buf, "error: command '%s' unknown\n", newbuf);
 
       n = sendto(sockfd, buf, (int)strlen(buf), 0, (struct sockaddr *) &clientaddr, clientlen);
-      if (n < 0) {error("ERROR in sendto");}
+      if (n < 0) {error("ERROR in sendto", 0); continue;}
     }
   }
 }
