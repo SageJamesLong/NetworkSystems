@@ -12,20 +12,17 @@
 #include <netdb.h> 
 
 #define BUFSIZE 4096
-#define DEBUG
+//#define DEBUG
 
 /* 
  * error - wrapper for perror
  */
-void error(char *msg, int ex, char buf[BUFSIZE]) {
+void error(char *msg, int ex) {
   perror(msg);
   if (ex)
   {
     exit(0);
   }
-  bzero(buf, BUFSIZE);
-  printf("Enter Command: ");
-  fgets(buf, BUFSIZE, stdin);
 }
 
 int main(int argc, char **argv) 
@@ -41,7 +38,7 @@ int main(int argc, char **argv)
   struct timeval t1;
   t.tv_sec = 10;
   t.tv_usec = 0;
-  t1.tv_sec = 0;
+  t1.tv_sec = 10;
   t1.tv_usec = 0;
   
   /* check command line arguments */
@@ -56,7 +53,7 @@ int main(int argc, char **argv)
   /* socket: create the socket */
 
   sockfd = socket(AF_INET, SOCK_DGRAM, 0);
-  if (sockfd < 0) {error("ERROR opening socket", 1, buf);}
+  if (sockfd < 0) {error("ERROR opening socket", 1);}
 
   /* gethostbyname: get the server's DNS entry */
 
@@ -91,7 +88,6 @@ int main(int argc, char **argv)
 
     if (strstr(buf, "put") != NULL)
     {
-      printf("\n");
       int argcount;
       char *bufarg;
       char *bufpos;
@@ -110,7 +106,7 @@ int main(int argc, char **argv)
       {
         printf("error: too many arguments\n");
       }
-      if (argcount <= 1)
+      else if (argcount <= 1)
       {
         printf("error: filename not specified\n");
       }
@@ -125,18 +121,13 @@ int main(int argc, char **argv)
           n = sendto(sockfd, buf, strlen(buf), 0, (struct sockaddr *)&serveraddr, serverlen);
           if (n < 0) 
           {
-            fclose(fp);
-            error("ERROR in sendto", 0, buf);
-            continue;
+            error("ERROR in sendto", 0);
           }
-          printf("\n");
           bzero(buf, BUFSIZE);
           n = recvfrom(sockfd, buf, BUFSIZE, 0, (struct sockaddr *)&serveraddr, &serverlen);
           if (n < 0) 
           {
-            fclose(fp);
-            error("ERROR in recvfrom", 0, buf);
-            continue;
+            error("ERROR in recvfrom", 0);
           }
           int fpos = 0;
           int ftop = 0;
@@ -170,16 +161,11 @@ int main(int argc, char **argv)
             memset(success, '\0', 100);
 
             sprintf(success, "PUT %d", fsend);
-            t1.tv_sec = 10;
             n = sendto(sockfd, success, (int)strlen(success), 0, (struct sockaddr *)&serveraddr, serverlen);
             if (n < 0) 
             {
-              t1.tv_sec = 0;
-              fclose(fp);
-              error("ERROR in sendto", 0, buf);
-              continue;
+              error("ERROR in sendto", 0);
             }
-            t1.tv_sec = 0;
 
             #ifdef DEBUG
               printf("progress: %d/%d bytes\n", fsum, fpos);
@@ -187,25 +173,16 @@ int main(int argc, char **argv)
 
             fread(buf, 1, fsend, fp);
 
-            sleep(15);
-
-            t1.tv_sec = 10;
             n = sendto(sockfd, buf, fsend, 0, (struct sockaddr *)&serveraddr, serverlen);
             if (n < 0) 
             {
-              t1.tv_sec = 0;
-              fclose(fp);
-              error("ERROR in sendto", 0, buf);
-              continue;
+              error("ERROR in sendto", 0);
             }
-            t1.tv_sec = 0;
             memset(buf, '\0', BUFSIZE);
             n = recvfrom(sockfd, buf, BUFSIZE, 0, (struct sockaddr *)&serveraddr, &serverlen);
             if (n < 0) 
             {
-              fclose(fp);
-              error("ERROR in recvfrom", 0, buf);
-              continue;
+              error("ERROR in recvfrom", 0);
             }
             if (strcmp(buf, "SUCCESS") != 0)
             {
@@ -216,16 +193,11 @@ int main(int argc, char **argv)
               break;
             }
           }
-          t1.tv_sec = 10;
           n = sendto(sockfd, "PUTSUCCESS", strlen("PUTSUCCESS"), 0, (struct sockaddr *)&serveraddr, serverlen);
           if (n < 0) 
           {
-            t1.tv_sec = 0;
-            fclose(fp);
-            error("ERROR in sendto", 0, buf);
-            continue;
+            error("ERROR in sendto", 0);
           }
-          t1.tv_sec = 0;
           fclose(fp);
         }
         else
@@ -233,24 +205,22 @@ int main(int argc, char **argv)
           printf("error: file '%s' not found\n", fname);
         }
       }
-      printf("\n");
     }
     else
     {
       n = sendto(sockfd, buf, strlen(buf), 0, (struct sockaddr *)&serveraddr, serverlen);
-      if (n < 0) {error("ERROR in sendto", 0, buf); continue;}
-      printf("\n");
+      if (n < 0) {error("ERROR in sendto", 0);}
       bzero(buf, BUFSIZE);
 
       n = recvfrom(sockfd, buf, BUFSIZE, 0, (struct sockaddr *)&serveraddr, &serverlen);
-      if (n < 0) {error("ERROR in recvfrom", 0, buf); continue;}
+      if (n < 0) {error("ERROR in recvfrom", 0);}
 
       if (strcmp(buf, "FAILURE") == 0 || strcmp(buf, "GETFAILURE") == 0)
       {
         bzero(buf, BUFSIZE);
         n = recvfrom(sockfd, buf, BUFSIZE, 0, (struct sockaddr *)&serveraddr, &serverlen);
-        if (n < 0) {error("ERROR in recvfrom", 0, buf); continue;}
-        printf("%s\n", buf);
+        if (n < 0) {error("ERROR in recvfrom", 0);}
+        printf("%s", buf);
 
         bzero(buf, BUFSIZE);
         printf("Enter Command: ");
@@ -285,31 +255,22 @@ int main(int argc, char **argv)
               n = recvfrom(sockfd, buf, BUFSIZE, 0, (struct sockaddr *)&serveraddr, &serverlen);
               if (n < 0) 
               {
-                fclose(fp);
-                error("ERROR in recvfrom", 0, buf);
-                continue;
+                error("ERROR in recvfrom", 0);
               }
 
               fwrite(buf, 1, bytes_to_copy, fp);
 
-              t1.tv_sec = 10;
               n = sendto(sockfd, "SUCCESS", strlen("SUCCESS"), 0, (struct sockaddr *)&serveraddr, serverlen);
               if (n < 0) 
               {
-                t1.tv_sec = 0;
-                fclose(fp);
-                error("ERROR in sendto", 0, buf);
-                continue;
+                error("ERROR in sendto", 0);
               }
-              t1.tv_sec = 0;
 
               bzero(buf, BUFSIZE);
               n = recvfrom(sockfd, buf, BUFSIZE, 0, (struct sockaddr *)&serveraddr, &serverlen);
               if (n < 0) 
               {
-                fclose(fp);
-                error("ERROR in recvfrom", 0, buf);
-                continue;
+                error("ERROR in recvfrom", 0);
               }
             }
           }
@@ -320,16 +281,12 @@ int main(int argc, char **argv)
           printf("error: failed to create file '%s'\n", fname);
           bzero(buf, BUFSIZE);
           n = recvfrom(sockfd, buf, BUFSIZE, 0, (struct sockaddr *)&serveraddr, &serverlen);
-          if (n < 0) {error("ERROR in recvfrom", 0, buf); continue;}
-          t1.tv_sec = 10;
+          if (n < 0) {error("ERROR in recvfrom", 0);}
           n = sendto(sockfd, "FAILED", strlen("FAILED"), 0, (struct sockaddr *)&serveraddr, serverlen);
           if (n < 0) 
           {
-            t1.tv_sec = 0;
-            error("ERROR in sendto", 0, buf);
-            continue;
+            error("ERROR in sendto", 0);
           }
-          t1.tv_sec = 0;
           bzero(buf, BUFSIZE);
           printf("Enter Command: ");
           fgets(buf, BUFSIZE, stdin);
@@ -338,23 +295,22 @@ int main(int argc, char **argv)
       } 
       else if (strcmp(buf, "DELETE") == 0)
       {
-        printf("delete recieved from server\n");
         bzero(buf, BUFSIZE);
         n = recvfrom(sockfd, buf, BUFSIZE, 0, (struct sockaddr *)&serveraddr, &serverlen);
-        if (n < 0) {error("ERROR in recvfrom", 0, buf); continue;}
-        printf("%s\n", buf);
+        if (n < 0) {error("ERROR in recvfrom", 0);}
+        printf("%s", buf);
       }
       else
       {
         if (strcmp(temp, "exit\n") == 0)
         {
-          printf("%s\n", buf);
+          printf("%s", buf);
           break;
         }
 
         if (strcmp(temp, "ls\n") == 0)
         {
-          printf("%s\n", buf);
+          printf("%s", buf);
         }
       }
     }
