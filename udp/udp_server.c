@@ -14,7 +14,7 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 
-#define BUFSIZE 2048
+#define BUFSIZE 4096
 
 //#define DEBUG
 #define COLOR
